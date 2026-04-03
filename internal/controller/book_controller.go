@@ -1,17 +1,18 @@
 package controller
 
 import (
-	"slices"
+	"play/internal/model"
+	"play/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
 
-type BookController struct{}
+type BookController struct {
+	Service service.BookService
+}
 
-type Book struct {
-	ID     string `json:"id" binding:"required"`
-	Title  string `json:"title" binding:"required"`
-	Author string `json:"author" binding:"required"`
+type BookUriParams struct {
+	ID int `uri:"id" binding:"required"`
 }
 
 type Response struct {
@@ -20,12 +21,21 @@ type Response struct {
 	Error   interface{} `json:"error,omitempty"`
 }
 
-var books = []Book{
-	{ID: "1", Title: "The Great Gatsby", Author: "F. Scott Fitzgerald"},
-	{ID: "2", Title: "To Kill a Mockingbird", Author: "Harper Lee"},
+func NewBookController(service service.BookService) *BookController {
+	return &BookController{Service: service}
 }
 
 func (b *BookController) GetBooks(c *gin.Context) {
+	books, err := b.Service.GetAllBooks()
+
+	if err != nil {
+		c.JSON(404, Response{
+			Success: false,
+			Error:   gin.H{"message": "Books not found"},
+		})
+		return
+	}
+
 	c.JSON(200, Response{
 		Success: true,
 		Data:    gin.H{"books": books},
@@ -33,24 +43,34 @@ func (b *BookController) GetBooks(c *gin.Context) {
 }
 
 func (b *BookController) GetBook(c *gin.Context) {
-	id := c.Param("id")
-	for _, book := range books {
-		if book.ID == id {
-			c.JSON(200, Response{
-				Success: true,
-				Data:    gin.H{"book": book},
-			})
-			return
-		}
+	var uri BookUriParams
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(400, Response{
+			Success: false,
+			Error:   gin.H{"message": "Invalid URI parameters"},
+		})
+		return
 	}
-	c.JSON(404, Response{
-		Success: false,
-		Error:   gin.H{"message": "Book not found"},
+
+	book, err := b.Service.GetBook(uri.ID)
+
+	if err != nil {
+		c.JSON(404, Response{
+			Success: false,
+			Error:   gin.H{"message": "Book not found"},
+		})
+		return
+	}
+
+	c.JSON(200, Response{
+		Success: true,
+		Data:    gin.H{"book": book},
 	})
 }
 
 func (b *BookController) CreateBook(c *gin.Context) {
-	var newBook Book
+	var newBook model.Book
+
 	if err := c.ShouldBindJSON(&newBook); err != nil {
 		c.JSON(400, Response{
 			Success: false,
@@ -58,7 +78,15 @@ func (b *BookController) CreateBook(c *gin.Context) {
 		})
 		return
 	}
-	books = append(books, newBook)
+
+	if err := b.Service.CreateBook(&newBook); err != nil {
+		c.JSON(500, Response{
+			Success: false,
+			Error:   gin.H{"message": err.Error()},
+		})
+		return
+	}
+
 	c.JSON(201, Response{
 		Success: true,
 		Data:    gin.H{"message": "Book Created", "book": newBook},
@@ -66,7 +94,8 @@ func (b *BookController) CreateBook(c *gin.Context) {
 }
 
 func (b *BookController) UpdateBook(c *gin.Context) {
-	var targetBook Book
+	var targetBook model.Book
+
 	if err := c.ShouldBindJSON(&targetBook); err != nil {
 		c.JSON(400, Response{
 			Success: false,
@@ -75,39 +104,47 @@ func (b *BookController) UpdateBook(c *gin.Context) {
 		return
 	}
 
-	for i, book := range books {
-		if book.ID == targetBook.ID {
-			books[i] = targetBook
-			c.JSON(200, Response{
-				Success: true,
-				Data:    gin.H{"message": "Book Updated", "book": targetBook},
-			})
-			return
-		}
+	err := b.Service.UpdateBook(&targetBook)
+
+	if err != nil {
+		c.JSON(500, Response{
+			Success: false,
+			Error:   gin.H{"message": "Internal Server Error"},
+		})
+		return
 	}
 
-	c.JSON(404, Response{
-		Success: false,
-		Error:   gin.H{"message": "Book not found"},
+	c.JSON(201, Response{
+		Success: true,
+		Data:    gin.H{"message": "Book Updated", "book": targetBook},
 	})
+
 }
 
 func (b *BookController) DeleteBook(c *gin.Context) {
-	id := c.Param("id")
+	var uri BookUriParams
 
-	for i, book := range books {
-		if book.ID == id {
-			slices.Delete(books, i, i+1)
-			c.JSON(200, Response{
-				Success: true,
-				Data:    gin.H{"message": "Book Deleted", "books": books},
-			})
-			return
-		}
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(400, Response{
+			Success: false,
+			Error:   gin.H{"message": "Invalid URI parameters"},
+		})
+		return
 	}
 
-	c.JSON(404, Response{
-		Success: false,
-		Error:   gin.H{"message": "Book not found"},
+	err := b.Service.DeleteBook(uri.ID)
+
+	if err != nil {
+		c.JSON(500, Response{
+			Success: false,
+			Error:   gin.H{"message": "Internal Server Error"},
+		})
+
+		return
+	}
+
+	c.JSON(200, Response{
+		Success: true,
+		Data:    gin.H{"message": "Book Deleted"},
 	})
 }
