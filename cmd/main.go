@@ -7,40 +7,27 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"play/internal/controller"
+	"play/config"
+	"play/database"
+	"play/internal/model"
 	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
-func DummyAuthMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		token := c.Request.Header.Get("Authorization")
-
-		if token != "secret-token" {
-			c.JSON(401, gin.H{"message": "인증 실패"})
-			c.Abort()
-			return
-		}
-
-		c.Next()
-	}
-}
-
 func main() {
-	r := gin.Default()
-	b := controller.BookController{}
+	config.LoadEnv()
 
-	v1 := r.Group("/api/v1")
-	v1.Use(DummyAuthMiddleware())
-	{
-		v1.GET("/books", b.GetBooks)
-		v1.GET("/books/:id", b.GetBook)
-		v1.POST("/books", b.CreateBook)
-		v1.PUT("/books/:id", b.UpdateBook)
-		v1.DELETE("/books/:id", b.DeleteBook)
-	}
+	db := database.ConnectDB()
+	db.AutoMigrate(&model.Book{})
+
+	sqlDB, _ := db.DB()
+	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetMaxOpenConns(100)
+	sqlDB.SetConnMaxLifetime(5 * time.Minute)
+
+	r := gin.Default()
 
 	srv := &http.Server{
 		Addr:    ":8080",
