@@ -10,6 +10,8 @@ import (
 	"play/config"
 	"play/database"
 	"play/internal/model"
+	"play/registry"
+	"play/router"
 	"syscall"
 	"time"
 
@@ -20,7 +22,13 @@ func main() {
 	config.LoadEnv()
 
 	db := database.ConnectDB()
-	db.AutoMigrate(&model.Book{})
+	err := db.AutoMigrate(&model.Book{})
+
+	if err != nil {
+		log.Println(err.Error())
+	}
+
+	container := registry.NewContainer(db)
 
 	sqlDB, _ := db.DB()
 	sqlDB.SetMaxIdleConns(10)
@@ -28,6 +36,7 @@ func main() {
 	sqlDB.SetConnMaxLifetime(5 * time.Minute)
 
 	r := gin.Default()
+	router.SetupRouter(r, container)
 
 	srv := &http.Server{
 		Addr:    ":8080",
